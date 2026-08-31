@@ -7,10 +7,15 @@
 namespace zerotrace {
 
 struct DetectionRule {
+
     std::string name;
     std::string description;
+
     std::regex pattern;
+
     int base_confidence;
+
+    bool custom;
 };
 
 }

@@ -5,7 +5,9 @@
 
 namespace zerotrace {
 
-static Severity calculate_severity(int confidence) {
+static Severity calculate_severity(
+    int confidence
+) {
 
     if (confidence >= 90) {
         return Severity::CRITICAL;
@@ -22,17 +24,20 @@ static Severity calculate_severity(int confidence) {
     return Severity::LOW;
 }
 
+
 std::vector<Finding> detect_secrets(
     const std::string& file,
     const std::string& content,
-    const std::unordered_set<std::string>& enabled_rules
+    const std::unordered_set<std::string>& enabled_rules,
+    const std::vector<DetectionRule>& custom_rules
 ) {
 
     std::vector<Finding> findings =
         apply_rules(
             file,
             content,
-            enabled_rules
+            enabled_rules,
+            custom_rules
         );
 
     for (Finding& finding : findings) {
@@ -57,10 +62,16 @@ std::vector<Finding> detect_secrets(
             confidence = 100;
         }
 
-        finding.entropy = entropy;
-        finding.confidence = confidence;
+        finding.entropy =
+            entropy;
+
+        finding.confidence =
+            confidence;
+
         finding.severity =
-            calculate_severity(confidence);
+            calculate_severity(
+                confidence
+            );
     }
 
     return findings;

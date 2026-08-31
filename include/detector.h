@@ -6,13 +6,15 @@
 #include <vector>
 
 #include "finding.h"
+#include "rule.h"
 
 namespace zerotrace {
 
 std::vector<Finding> detect_secrets(
     const std::string& file,
     const std::string& content,
-    const std::unordered_set<std::string>& enabled_rules
+    const std::unordered_set<std::string>& enabled_rules,
+    const std::vector<DetectionRule>& custom_rules
 );
 
 }

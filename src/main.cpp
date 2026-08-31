@@ -517,18 +517,26 @@ int main(int argc, char* argv[]) {
     }
 
     /*
-        Load enabled detection rules once.
+        Load enabled built-in rules.
     */
 
     std::unordered_set<std::string> enabled_rules =
         zerotrace::load_enabled_rules(rules_path);
 
     /*
+        Load user-defined custom rules.
+    */
+
+    std::vector<zerotrace::DetectionRule> custom_rules =
+        zerotrace::load_custom_rules(rules_path);
+
+    /*
         If rules.conf doesn't exist,
         enable all default rules.
     */
 
-    if (enabled_rules.empty()) {
+    if (enabled_rules.empty() &&
+        custom_rules.empty()) {
 
         std::ifstream rules_file(rules_path);
 
@@ -539,9 +547,26 @@ int main(int argc, char* argv[]) {
                     zerotrace::create_default_rules();
 
             for (const auto& rule : default_rules) {
-                enabled_rules.insert(rule.name);
+
+                enabled_rules.insert(
+                    rule.name
+                );
             }
         }
+    }
+
+    /*
+        Enable custom rules automatically.
+
+        Custom rules are considered enabled when
+        they are present in rules.conf.
+    */
+
+    for (const auto& rule : custom_rules) {
+
+        enabled_rules.insert(
+            rule.name
+        );
     }
 
     /*
@@ -559,7 +584,9 @@ int main(int argc, char* argv[]) {
         thread_count > files.size()) {
 
         thread_count =
-            static_cast<unsigned int>(files.size());
+            static_cast<unsigned int>(
+                files.size()
+            );
     }
 
     if (files.empty()) {
@@ -571,7 +598,9 @@ int main(int argc, char* argv[]) {
     */
 
     std::vector<
-        std::future<std::vector<zerotrace::Finding>>
+        std::future<
+            std::vector<zerotrace::Finding>
+        >
     > tasks;
 
     tasks.reserve(thread_count);
@@ -608,6 +637,7 @@ int main(int argc, char* argv[]) {
                 std::launch::async,
                 [&files,
                  &enabled_rules,
+                 &custom_rules,
                  worker_start,
                  worker_end]() {
 
@@ -628,8 +658,11 @@ int main(int argc, char* argv[]) {
                         }
 
                         std::string content(
-                            (std::istreambuf_iterator<char>(
-                                input)),
+                            (
+                                std::istreambuf_iterator<char>(
+                                    input
+                                )
+                            ),
                             std::istreambuf_iterator<char>()
                         );
 
@@ -638,7 +671,8 @@ int main(int argc, char* argv[]) {
                                 zerotrace::detect_secrets(
                                     file,
                                     content,
-                                    enabled_rules
+                                    enabled_rules,
+                                    custom_rules
                                 );
 
                         worker_findings.insert(
@@ -658,12 +692,14 @@ int main(int argc, char* argv[]) {
         Collect worker results.
     */
 
-    std::vector<zerotrace::Finding> all_findings;
+    std::vector<zerotrace::Finding>
+        all_findings;
 
     for (auto& task : tasks) {
 
-        std::vector<zerotrace::Finding> findings =
-            task.get();
+        std::vector<zerotrace::Finding>
+            findings =
+                task.get();
 
         all_findings.insert(
             all_findings.end(),
@@ -710,12 +746,15 @@ int main(int argc, char* argv[]) {
         Load baseline.
     */
 
-    std::unordered_set<std::string> baseline;
+    std::unordered_set<std::string>
+        baseline;
 
     if (!baseline_path.empty()) {
 
         baseline =
-            zerotrace::load_baseline(baseline_path);
+            zerotrace::load_baseline(
+                baseline_path
+            );
 
         if (baseline.empty()) {
 
@@ -774,28 +813,30 @@ int main(int argc, char* argv[]) {
 
     else if (json_output) {
 
-        report = build_json_report(
-            all_findings,
-            files.size(),
-            thread_count,
-            rules_path,
-            baseline,
-            baseline_path,
-            new_findings
-        );
+        report =
+            build_json_report(
+                all_findings,
+                files.size(),
+                thread_count,
+                rules_path,
+                baseline,
+                baseline_path,
+                new_findings
+            );
     }
 
     else {
 
-        report = build_text_report(
-            all_findings,
-            path,
-            files.size(),
-            thread_count,
-            baseline,
-            baseline_path,
-            new_findings
-        );
+        report =
+            build_text_report(
+                all_findings,
+                path,
+                files.size(),
+                thread_count,
+                baseline,
+                baseline_path,
+                new_findings
+            );
     }
 
     /*
@@ -842,8 +883,13 @@ int main(int argc, char* argv[]) {
     */
 
     if (!baseline_path.empty()) {
-        return new_findings > 0 ? 1 : 0;
+
+        return new_findings > 0
+            ? 1
+            : 0;
     }
 
-    return all_findings.empty() ? 0 : 1;
+    return all_findings.empty()
+        ? 0
+        : 1;
 }
