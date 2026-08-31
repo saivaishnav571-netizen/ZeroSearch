@@ -36,7 +36,6 @@ std::vector<Finding> detect_secrets(
 
         int confidence = finding.confidence;
 
-        // Add evidence from entropy.
         if (entropy >= 3.5) {
             confidence += 10;
         }
@@ -49,6 +48,7 @@ std::vector<Finding> detect_secrets(
             confidence = 100;
         }
 
+        finding.entropy = entropy;
         finding.confidence = confidence;
         finding.severity = calculate_severity(confidence);
     }

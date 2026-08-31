@@ -125,6 +125,7 @@ std::vector<Finding> apply_rules(
             trimmed = trimmed.substr(first_non_space);
         }
 
+        // Ignore single-line comments.
         if (trimmed.rfind("//", 0) == 0 ||
             trimmed.rfind("#", 0) == 0) {
             continue;
@@ -134,29 +135,40 @@ std::vector<Finding> apply_rules(
 
             std::smatch match;
 
-            if (std::regex_search(
+            if (!std::regex_search(
                     line,
                     match,
                     rule.pattern)) {
-
-                Finding finding;
-
-                finding.file = file;
-                finding.line = line_number;
-                finding.type = rule.name;
-
-                if (match.size() > 1) {
-                    finding.matched_text =
-                        match[match.size() - 1].str();
-                }
-
-                finding.confidence =
-                    rule.base_confidence;
-
-                finding.severity = Severity::HIGH;
-
-                findings.push_back(finding);
+                continue;
             }
+
+            Finding finding;
+
+            finding.file = file;
+            finding.line = line_number;
+            finding.type = rule.name;
+            finding.entropy = 0.0;
+            finding.confidence = rule.base_confidence;
+            finding.severity = Severity::HIGH;
+
+            /*
+                Generic assignment rules have two capture groups:
+
+                group 1 = variable name
+                group 2 = secret value
+
+                Advanced rules generally have no useful capture group,
+                so we use the complete regex match.
+            */
+
+            if (match.size() >= 3) {
+                finding.matched_text = match[2].str();
+            }
+            else {
+                finding.matched_text = match[0].str();
+            }
+
+            findings.push_back(finding);
         }
     }
 

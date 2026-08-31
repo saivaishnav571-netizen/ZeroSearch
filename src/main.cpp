@@ -1,4 +1,5 @@
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -98,6 +99,12 @@ int main(int argc, char* argv[]) {
                 std::cout << "  Confidence: "
                           << finding.confidence
                           << "%\n";
+
+                std::cout << "  Entropy: "
+                          << std::fixed
+                          << std::setprecision(2)
+                          << finding.entropy
+                          << "\n";
 
                 std::cout << "  Value: "
                           << zerotrace::redact_secret(

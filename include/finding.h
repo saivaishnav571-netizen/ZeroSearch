@@ -17,6 +17,9 @@ struct Finding {
     int line;
     std::string type;
     std::string matched_text;
+
+    double entropy;
+
     Severity severity;
     int confidence;
 };
