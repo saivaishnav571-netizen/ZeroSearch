@@ -14,6 +14,7 @@
 #include "redactor.h"
 #include "rule_engine.h"
 #include "scanner.h"
+#include "sarif.h"
 
 std::string severity_to_string(zerotrace::Severity severity) {
 
@@ -332,6 +333,7 @@ int main(int argc, char* argv[]) {
         std::cout
             << "Usage: zerotrace scan <directory> "
                "[--json] "
+               "[--sarif] "
                "[--output <file>] "
                "[--save-baseline <file>] "
                "[--baseline <file>] "
@@ -364,6 +366,7 @@ int main(int argc, char* argv[]) {
     const std::string path = argv[2];
 
     bool json_output = false;
+    bool sarif_output = false;
 
     std::string output_path;
     std::string save_baseline_path;
@@ -389,6 +392,11 @@ int main(int argc, char* argv[]) {
         if (argument == "--json") {
 
             json_output = true;
+        }
+
+        else if (argument == "--sarif") {
+
+            sarif_output = true;
         }
 
         else if (argument == "--output") {
@@ -493,6 +501,19 @@ int main(int argc, char* argv[]) {
 
             return 2;
         }
+    }
+
+    /*
+        Prevent conflicting output formats.
+    */
+
+    if (json_output && sarif_output) {
+
+        std::cerr
+            << "Error: --json and --sarif "
+               "cannot be used together.\n";
+
+        return 2;
     }
 
     /*
@@ -669,7 +690,9 @@ int main(int argc, char* argv[]) {
             return 2;
         }
 
-        if (!json_output && output_path.empty()) {
+        if (!json_output &&
+            !sarif_output &&
+            output_path.empty()) {
 
             std::cout
                 << "Baseline saved to: "
@@ -736,12 +759,20 @@ int main(int argc, char* argv[]) {
     }
 
     /*
-        Build the report.
+        Build report.
     */
 
     std::string report;
 
-    if (json_output) {
+    if (sarif_output) {
+
+        report =
+            zerotrace::build_sarif_report(
+                all_findings
+            );
+    }
+
+    else if (json_output) {
 
         report = build_json_report(
             all_findings,
@@ -798,10 +829,6 @@ int main(int argc, char* argv[]) {
     }
 
     else {
-
-        /*
-            Preserve normal terminal behavior.
-        */
 
         std::cout << report;
     }
