@@ -8,23 +8,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_executable(zerotrace
 
     src/main.cpp
-
     src/scanner.cpp
-
     src/detector.cpp
-
     src/entropy.cpp
-
     src/rule_engine.cpp
-
     src/redactor.cpp
-
     src/baseline.cpp
-
-    src/sarif.cpp
-
     src/allowlist.cpp
-
+    src/sarif.cpp
+    src/html_report.cpp
 )
 
 target_include_directories(zerotrace PRIVATE

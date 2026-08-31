@@ -14,6 +14,7 @@
 #include "baseline.h"
 #include "detector.h"
 #include "finding.h"
+#include "html_report.h"
 #include "redactor.h"
 #include "rule_engine.h"
 #include "scanner.h"
@@ -23,7 +24,6 @@
 std::string severity_to_string(
     zerotrace::Severity severity
 ) {
-
     switch (severity) {
 
         case zerotrace::Severity::LOW:
@@ -46,7 +46,6 @@ std::string severity_to_string(
 std::string normalize_path(
     std::string path
 ) {
-
     for (char& character : path) {
 
         if (character == '\\') {
@@ -61,7 +60,6 @@ std::string normalize_path(
 std::string escape_json(
     const std::string& text
 ) {
-
     std::string result;
 
     for (char character : text) {
@@ -97,15 +95,10 @@ std::string escape_json(
 }
 
 
-/*
-    Count findings by severity.
-*/
-
 std::map<std::string, int>
 count_by_severity(
     const std::vector<zerotrace::Finding>& findings
 ) {
-
     std::map<std::string, int> counts;
 
     for (const auto& finding : findings) {
@@ -121,19 +114,13 @@ count_by_severity(
 }
 
 
-/*
-    Count findings by detection rule.
-*/
-
 std::map<std::string, int>
 count_by_rule(
     const std::vector<zerotrace::Finding>& findings
 ) {
-
     std::map<std::string, int> counts;
 
     for (const auto& finding : findings) {
-
         counts[finding.type]++;
     }
 
@@ -151,18 +138,13 @@ std::string build_json_report(
     int new_findings,
     double scan_time_seconds
 ) {
-
     std::ostringstream output;
 
     const auto severity_counts =
-        count_by_severity(
-            all_findings
-        );
+        count_by_severity(all_findings);
 
     const auto rule_counts =
-        count_by_rule(
-            all_findings
-        );
+        count_by_rule(all_findings);
 
     output << "{\n";
 
@@ -201,13 +183,8 @@ std::string build_json_report(
             << ",\n";
     }
 
-    /*
-        Severity statistics.
-    */
-
     output
         << "  \"severity_counts\": {\n";
-
 
     output
         << "    \"LOW\": "
@@ -248,10 +225,6 @@ std::string build_json_report(
     output
         << "  },\n";
 
-    /*
-        Rule statistics.
-    */
-
     output
         << "  \"rule_counts\": {\n";
 
@@ -274,10 +247,6 @@ std::string build_json_report(
 
     output
         << "  },\n";
-
-    /*
-        Individual findings.
-    */
 
     output
         << "  \"findings\": [\n";
@@ -313,9 +282,7 @@ std::string build_json_report(
         output
             << "      \"file\": \""
             << escape_json(
-                   normalize_path(
-                       finding.file
-                   )
+                   normalize_path(finding.file)
                )
             << "\",\n";
 
@@ -326,9 +293,7 @@ std::string build_json_report(
 
         output
             << "      \"severity\": \""
-            << severity_to_string(
-                   finding.severity
-               )
+            << severity_to_string(finding.severity)
             << "\",\n";
 
         output
@@ -392,18 +357,13 @@ std::string build_text_report(
     int new_findings,
     double scan_time_seconds
 ) {
-
     std::ostringstream output;
 
     const auto severity_counts =
-        count_by_severity(
-            all_findings
-        );
+        count_by_severity(all_findings);
 
     const auto rule_counts =
-        count_by_rule(
-            all_findings
-        );
+        count_by_rule(all_findings);
 
     output
         << "=================================\n"
@@ -464,9 +424,7 @@ std::string build_text_report(
 
         output
             << "  File: "
-            << normalize_path(
-                   finding.file
-               )
+            << normalize_path(finding.file)
             << "\n";
 
         output
@@ -493,10 +451,6 @@ std::string build_text_report(
                )
             << "\n\n";
     }
-
-    /*
-        Summary.
-    */
 
     output
         << "---------------------------------\n"
@@ -585,10 +539,6 @@ int main(
     char* argv[]
 ) {
 
-    /*
-        Start timer as early as possible.
-    */
-
     const auto scan_start =
         std::chrono::steady_clock::now();
 
@@ -598,6 +548,7 @@ int main(
             << "Usage: zerotrace scan <directory> "
                "[--json] "
                "[--sarif] "
+               "[--html] "
                "[--output <file>] "
                "[--save-baseline <file>] "
                "[--baseline <file>] "
@@ -634,6 +585,7 @@ int main(
 
     bool json_output = false;
     bool sarif_output = false;
+    bool html_output = false;
 
     std::string output_path;
     std::string save_baseline_path;
@@ -649,7 +601,7 @@ int main(
     }
 
     /*
-        Parse command-line options.
+        Parse command-line arguments.
     */
 
     for (int i = 3;
@@ -667,6 +619,11 @@ int main(
         else if (argument == "--sarif") {
 
             sarif_output = true;
+        }
+
+        else if (argument == "--html") {
+
+            html_output = true;
         }
 
         else if (argument == "--output") {
@@ -731,9 +688,7 @@ int main(
             try {
 
                 const unsigned long parsed =
-                    std::stoul(
-                        argv[++i]
-                    );
+                    std::stoul(argv[++i]);
 
                 if (parsed == 0) {
 
@@ -803,14 +758,18 @@ int main(
     }
 
     /*
-        Prevent conflicting formats.
+        Prevent multiple report formats.
     */
 
-    if (json_output &&
-        sarif_output) {
+    const int output_formats =
+        static_cast<int>(json_output) +
+        static_cast<int>(sarif_output) +
+        static_cast<int>(html_output);
+
+    if (output_formats > 1) {
 
         std::cerr
-            << "Error: --json and --sarif "
+            << "Error: --json, --sarif and --html "
                "cannot be used together.\n";
 
         return 2;
@@ -933,7 +892,7 @@ int main(
     }
 
     /*
-        Multithreaded scanning.
+        Create worker tasks.
     */
 
     std::vector<
@@ -990,6 +949,7 @@ int main(
         tasks.push_back(
             std::async(
                 std::launch::async,
+
                 [&files,
                  &enabled_rules,
                  &custom_rules,
@@ -1037,11 +997,6 @@ int main(
                                 custom_rules
                             );
 
-                        /*
-                            Remove allowlisted
-                            findings.
-                        */
-
                         findings =
                             zerotrace::filter_allowlisted(
                                 findings,
@@ -1084,7 +1039,7 @@ int main(
     }
 
     /*
-        Stop the timer after scanning.
+        Stop scanner timer.
     */
 
     const auto scan_end =
@@ -1116,21 +1071,6 @@ int main(
                 << "\n";
 
             return 2;
-        }
-
-        if (!json_output &&
-            !sarif_output &&
-            output_path.empty()) {
-
-            std::cout
-                << "Baseline saved to: "
-                << save_baseline_path
-                << "\n";
-
-            std::cout
-                << "Findings saved: "
-                << all_findings.size()
-                << "\n";
         }
     }
 
@@ -1192,7 +1132,7 @@ int main(
     }
 
     /*
-        Build report.
+        Build selected report format.
     */
 
     std::string report;
@@ -1202,6 +1142,17 @@ int main(
         report =
             zerotrace::build_sarif_report(
                 all_findings
+            );
+    }
+
+    else if (html_output) {
+
+        report =
+            zerotrace::build_html_report(
+                all_findings,
+                files.size(),
+                thread_count,
+                scan_time_seconds
             );
     }
 
@@ -1236,7 +1187,7 @@ int main(
     }
 
     /*
-        Write report to file.
+        Write report.
     */
 
     if (!output_path.empty()) {
@@ -1274,7 +1225,7 @@ int main(
     /*
         Exit codes:
 
-        0 = no findings / no new findings
+        0 = no findings
         1 = findings / new findings
         2 = scanner error
     */

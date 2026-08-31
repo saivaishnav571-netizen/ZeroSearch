@@ -1,0 +1,87 @@
+{
+  "files_scanned": 2,
+  "threads": 2,
+  "rules_file": "rules.conf",
+  "scan_time_seconds": 0.002,
+  "total_findings": 7,
+  "severity_counts": {
+    "LOW": 0,
+    "MEDIUM": 0,
+    "HIGH": 1,
+    "CRITICAL": 6
+  },
+  "rule_counts": {
+    "AWS Access Key": 1,
+    "Generic API Key": 1,
+    "GitHub Token": 1,
+    "Internal Token": 1,
+    "JWT": 1,
+    "Password": 1,
+    "Private Key": 1
+  },
+  "findings": [
+    {
+      "type": "AWS Access Key",
+      "file": "./testdata/advanced_test.cpp",
+      "line": 3,
+      "severity": "CRITICAL",
+      "confidence": 100,
+      "entropy": 3.68,
+      "value": "AKIA********MPLE"
+    },
+    {
+      "type": "GitHub Token",
+      "file": "./testdata/advanced_test.cpp",
+      "line": 4,
+      "severity": "CRITICAL",
+      "confidence": 100,
+      "entropy": 4.91,
+      "value": "ghp_********mnop"
+    },
+    {
+      "type": "JWT",
+      "file": "./testdata/advanced_test.cpp",
+      "line": 5,
+      "severity": "CRITICAL",
+      "confidence": 100,
+      "entropy": 4.76,
+      "value": "eyJh********e123"
+    },
+    {
+      "type": "Private Key",
+      "file": "./testdata/advanced_test.cpp",
+      "line": 6,
+      "severity": "CRITICAL",
+      "confidence": 95,
+      "entropy": 3.20,
+      "value": "----********----"
+    },
+    {
+      "type": "Internal Token",
+      "file": "./testdata/advanced_test.cpp",
+      "line": 7,
+      "severity": "CRITICAL",
+      "confidence": 100,
+      "entropy": 4.11,
+      "value": "MYAP********9XYZ"
+    },
+    {
+      "type": "Generic API Key",
+      "file": "./testdata/fake_config.cpp",
+      "line": 3,
+      "severity": "CRITICAL",
+      "confidence": 95,
+      "entropy": 4.46,
+      "value": "sk_t********cdef"
+    },
+    {
+      "type": "Password",
+      "file": "./testdata/fake_config.cpp",
+      "line": 4,
+      "severity": "HIGH",
+      "confidence": 85,
+      "entropy": 3.95,
+      "value": "Fake********3456"
+    }
+  ]
+}
