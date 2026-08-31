@@ -13,6 +13,7 @@ add_executable(zerotrace
     src/main.cpp
     src/scanner.cpp
     src/detector.cpp
+    src/entropy.cpp
 )
 
 target_include_directories(zerotrace

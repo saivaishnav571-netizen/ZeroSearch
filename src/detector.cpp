@@ -1,4 +1,5 @@
 #include "detector.h"
+#include "entropy.h"
 
 #include <regex>
 #include <sstream>
@@ -10,16 +11,6 @@ std::vector<Finding> detect_secrets(
     const std::string& content
 ) {
     std::vector<Finding> findings;
-
-    /*
-        Detect credential-like assignments such as:
-
-        api_key = "..."
-        api_token = "..."
-        secret_key = "..."
-        password = "..."
-        credential = "..."
-    */
 
     const std::regex secret_pattern(
         R"((api[_-]?key|api[_-]?token|secret[_-]?key|password|credential)\s*=\s*["']([^"']+)["'])",
@@ -54,14 +45,34 @@ std::vector<Finding> detect_secrets(
 
         if (std::regex_search(line, match, secret_pattern)) {
 
+            const std::string secret_value = match[2].str();
+
+            const double entropy =
+                calculate_entropy(secret_value);
+
+            int confidence = 80;
+
+            // Higher entropy provides additional evidence.
+            if (entropy >= 3.5) {
+                confidence += 10;
+            }
+
+            if (entropy >= 4.0) {
+                confidence += 5;
+            }
+
+            if (confidence > 100) {
+                confidence = 100;
+            }
+
             Finding finding;
 
             finding.file = file;
             finding.line = line_number;
             finding.type = "Potential Secret";
-            finding.matched_text = match[2].str();
+            finding.matched_text = secret_value;
             finding.severity = Severity::HIGH;
-            finding.confidence = 80;
+            finding.confidence = confidence;
 
             findings.push_back(finding);
         }
