@@ -10,4 +10,4 @@ std::vector<std::string> scan_directory(const std::string& path);
 
 }
 
-#endif  
+#endif
