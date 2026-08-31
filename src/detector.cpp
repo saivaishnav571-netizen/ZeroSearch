@@ -6,6 +6,23 @@
 
 namespace zerotrace {
 
+static Severity calculate_severity(int confidence) {
+
+    if (confidence >= 90) {
+        return Severity::CRITICAL;
+    }
+
+    if (confidence >= 75) {
+        return Severity::HIGH;
+    }
+
+    if (confidence >= 50) {
+        return Severity::MEDIUM;
+    }
+
+    return Severity::LOW;
+}
+
 std::vector<Finding> detect_secrets(
     const std::string& file,
     const std::string& content
@@ -25,7 +42,6 @@ std::vector<Finding> detect_secrets(
 
         ++line_number;
 
-        // Remove leading whitespace.
         std::string trimmed = line;
 
         const std::size_t first_non_space =
@@ -52,7 +68,7 @@ std::vector<Finding> detect_secrets(
 
             int confidence = 80;
 
-            // Higher entropy provides additional evidence.
+            // Entropy provides additional evidence.
             if (entropy >= 3.5) {
                 confidence += 10;
             }
@@ -71,8 +87,8 @@ std::vector<Finding> detect_secrets(
             finding.line = line_number;
             finding.type = "Potential Secret";
             finding.matched_text = secret_value;
-            finding.severity = Severity::HIGH;
             finding.confidence = confidence;
+            finding.severity = calculate_severity(confidence);
 
             findings.push_back(finding);
         }

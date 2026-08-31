@@ -4,7 +4,28 @@
 #include <vector>
 
 #include "detector.h"
+#include "finding.h"
 #include "scanner.h"
+
+std::string severity_to_string(zerotrace::Severity severity) {
+
+    switch (severity) {
+
+        case zerotrace::Severity::LOW:
+            return "LOW";
+
+        case zerotrace::Severity::MEDIUM:
+            return "MEDIUM";
+
+        case zerotrace::Severity::HIGH:
+            return "HIGH";
+
+        case zerotrace::Severity::CRITICAL:
+            return "CRITICAL";
+    }
+
+    return "UNKNOWN";
+}
 
 int main(int argc, char* argv[]) {
 
@@ -35,7 +56,9 @@ int main(int argc, char* argv[]) {
         std::vector<std::string> files =
             zerotrace::scan_directory(path);
 
-        std::cout << "Files scanned: " << files.size() << "\n\n";
+        std::cout << "Files scanned: "
+                  << files.size()
+                  << "\n\n";
 
         int total_findings = 0;
 
@@ -57,7 +80,9 @@ int main(int argc, char* argv[]) {
 
             for (const auto& finding : findings) {
 
-                std::cout << "[HIGH] "
+                std::cout << "["
+                          << severity_to_string(finding.severity)
+                          << "] "
                           << finding.type
                           << "\n";
 
