@@ -1,5 +1,6 @@
 #include "rule_engine.h"
 
+#include <fstream>
 #include <sstream>
 
 namespace zerotrace {
@@ -97,9 +98,78 @@ std::vector<DetectionRule> create_default_rules() {
     return rules;
 }
 
+std::unordered_set<std::string> load_enabled_rules(
+    const std::string& path
+) {
+
+    std::unordered_set<std::string> enabled_rules;
+
+    std::ifstream input(path);
+
+    if (!input.is_open()) {
+        return enabled_rules;
+    }
+
+    std::string line;
+
+    while (std::getline(input, line)) {
+
+        if (line.empty()) {
+            continue;
+        }
+
+        const std::size_t first_non_space =
+            line.find_first_not_of(" \t");
+
+        if (first_non_space == std::string::npos) {
+            continue;
+        }
+
+        line = line.substr(first_non_space);
+
+        if (line.rfind("#", 0) == 0) {
+            continue;
+        }
+
+        const std::size_t separator =
+            line.find('=');
+
+        if (separator == std::string::npos) {
+            continue;
+        }
+
+        std::string rule_name =
+            line.substr(0, separator);
+
+        std::string state =
+            line.substr(separator + 1);
+
+        while (!rule_name.empty() &&
+               (rule_name.back() == ' ' ||
+                rule_name.back() == '\t')) {
+
+            rule_name.pop_back();
+        }
+
+        while (!state.empty() &&
+               (state.front() == ' ' ||
+                state.front() == '\t')) {
+
+            state.erase(state.begin());
+        }
+
+        if (state == "enabled") {
+            enabled_rules.insert(rule_name);
+        }
+    }
+
+    return enabled_rules;
+}
+
 std::vector<Finding> apply_rules(
     const std::string& file,
-    const std::string& content
+    const std::string& content,
+    const std::unordered_set<std::string>& enabled_rules
 ) {
 
     std::vector<Finding> findings;
@@ -122,16 +192,24 @@ std::vector<Finding> apply_rules(
             trimmed.find_first_not_of(" \t");
 
         if (first_non_space != std::string::npos) {
-            trimmed = trimmed.substr(first_non_space);
+            trimmed =
+                trimmed.substr(first_non_space);
         }
 
         // Ignore single-line comments.
         if (trimmed.rfind("//", 0) == 0 ||
             trimmed.rfind("#", 0) == 0) {
+
             continue;
         }
 
         for (const DetectionRule& rule : rules) {
+
+            if (enabled_rules.find(rule.name) ==
+                enabled_rules.end()) {
+
+                continue;
+            }
 
             std::smatch match;
 
@@ -139,6 +217,7 @@ std::vector<Finding> apply_rules(
                     line,
                     match,
                     rule.pattern)) {
+
                 continue;
             }
 
@@ -148,24 +227,17 @@ std::vector<Finding> apply_rules(
             finding.line = line_number;
             finding.type = rule.name;
             finding.entropy = 0.0;
-            finding.confidence = rule.base_confidence;
+            finding.confidence =
+                rule.base_confidence;
             finding.severity = Severity::HIGH;
 
-            /*
-                Generic assignment rules have two capture groups:
-
-                group 1 = variable name
-                group 2 = secret value
-
-                Advanced rules generally have no useful capture group,
-                so we use the complete regex match.
-            */
-
             if (match.size() >= 3) {
-                finding.matched_text = match[2].str();
+                finding.matched_text =
+                    match[2].str();
             }
             else {
-                finding.matched_text = match[0].str();
+                finding.matched_text =
+                    match[0].str();
             }
 
             findings.push_back(finding);

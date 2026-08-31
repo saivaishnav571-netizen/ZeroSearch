@@ -11,6 +11,7 @@
 #include "detector.h"
 #include "finding.h"
 #include "redactor.h"
+#include "rule_engine.h"
 #include "scanner.h"
 
 std::string severity_to_string(zerotrace::Severity severity) {
@@ -90,7 +91,8 @@ int main(int argc, char* argv[]) {
                "[--json] "
                "[--save-baseline <file>] "
                "[--baseline <file>] "
-               "[--threads <number>]\n";
+               "[--threads <number>] "
+               "[--rules <file>]\n";
 
         return 2;
     }
@@ -123,10 +125,15 @@ int main(int argc, char* argv[]) {
     std::string baseline_path;
 
     /*
+        Default rules configuration file.
+    */
+
+    std::string rules_path = "rules.conf";
+
+    /*
         Default thread count.
 
-        Use the number of hardware threads reported
-        by the system. Fall back to 1 if unavailable.
+        Use all hardware threads reported by the system.
     */
 
     unsigned int thread_count =
@@ -135,6 +142,10 @@ int main(int argc, char* argv[]) {
     if (thread_count == 0) {
         thread_count = 1;
     }
+
+    /*
+        Parse command-line options.
+    */
 
     for (int i = 3; i < argc; ++i) {
 
@@ -210,6 +221,20 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        else if (argument == "--rules") {
+
+            if (i + 1 >= argc) {
+
+                std::cerr
+                    << "Error: --rules "
+                       "requires a file path.\n";
+
+                return 2;
+            }
+
+            rules_path = argv[++i];
+        }
+
         else {
 
             std::cerr
@@ -218,6 +243,38 @@ int main(int argc, char* argv[]) {
                 << "\n";
 
             return 2;
+        }
+    }
+
+    /*
+        Load enabled detection rules once.
+
+        Worker threads only read this set.
+    */
+
+    std::unordered_set<std::string> enabled_rules =
+        zerotrace::load_enabled_rules(rules_path);
+
+    /*
+        If the configuration file doesn't exist,
+        use all default rules.
+
+        This preserves the old ZeroTrace behavior.
+    */
+
+    if (enabled_rules.empty()) {
+
+        std::ifstream rules_file(rules_path);
+
+        if (!rules_file.is_open()) {
+
+            const std::vector<zerotrace::DetectionRule>
+                default_rules =
+                    zerotrace::create_default_rules();
+
+            for (const auto& rule : default_rules) {
+                enabled_rules.insert(rule.name);
+            }
         }
     }
 
@@ -240,13 +297,18 @@ int main(int argc, char* argv[]) {
     }
 
     /*
+        If there are no files, avoid creating
+        zero workers.
+    */
+
+    if (files.empty()) {
+        thread_count = 1;
+    }
+
+    /*
         Multithreaded scanning.
 
-        Files are distributed among a fixed number
-        of worker tasks.
-
-        Each task processes a range of files and
-        returns its own findings.
+        Each worker processes a range of files.
     */
 
     std::vector<
@@ -285,7 +347,10 @@ int main(int argc, char* argv[]) {
         tasks.push_back(
             std::async(
                 std::launch::async,
-                [&files, worker_start, worker_end]() {
+                [&files,
+                 &enabled_rules,
+                 worker_start,
+                 worker_end]() {
 
                     std::vector<zerotrace::Finding>
                         worker_findings;
@@ -313,7 +378,8 @@ int main(int argc, char* argv[]) {
                             findings =
                                 zerotrace::detect_secrets(
                                     file,
-                                    content
+                                    content,
+                                    enabled_rules
                                 );
 
                         worker_findings.insert(
@@ -450,6 +516,11 @@ int main(int argc, char* argv[]) {
             << "  \"threads\": "
             << thread_count
             << ",\n";
+
+        std::cout
+            << "  \"rules_file\": \""
+            << escape_json(rules_path)
+            << "\",\n";
 
         std::cout
             << "  \"total_findings\": "

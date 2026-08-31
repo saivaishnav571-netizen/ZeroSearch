@@ -1,4 +1,5 @@
 #include "detector.h"
+
 #include "entropy.h"
 #include "rule_engine.h"
 
@@ -23,18 +24,26 @@ static Severity calculate_severity(int confidence) {
 
 std::vector<Finding> detect_secrets(
     const std::string& file,
-    const std::string& content
+    const std::string& content,
+    const std::unordered_set<std::string>& enabled_rules
 ) {
 
     std::vector<Finding> findings =
-        apply_rules(file, content);
+        apply_rules(
+            file,
+            content,
+            enabled_rules
+        );
 
     for (Finding& finding : findings) {
 
         const double entropy =
-            calculate_entropy(finding.matched_text);
+            calculate_entropy(
+                finding.matched_text
+            );
 
-        int confidence = finding.confidence;
+        int confidence =
+            finding.confidence;
 
         if (entropy >= 3.5) {
             confidence += 10;
@@ -50,7 +59,8 @@ std::vector<Finding> detect_secrets(
 
         finding.entropy = entropy;
         finding.confidence = confidence;
-        finding.severity = calculate_severity(confidence);
+        finding.severity =
+            calculate_severity(confidence);
     }
 
     return findings;
