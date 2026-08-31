@@ -12,6 +12,7 @@ add_executable(zerotrace
     src/entropy.cpp
     src/rule_engine.cpp
     src/redactor.cpp
+    src/baseline.cpp
 )
 
 target_include_directories(zerotrace PRIVATE

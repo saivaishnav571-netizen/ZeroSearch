@@ -2,8 +2,10 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
+#include "baseline.h"
 #include "detector.h"
 #include "finding.h"
 #include "redactor.h"
@@ -80,39 +82,89 @@ std::string escape_json(const std::string& text) {
 int main(int argc, char* argv[]) {
 
     if (argc < 2) {
-        std::cout << "Usage: zerotrace scan <directory> [--json]\n";
+
+        std::cout
+            << "Usage: zerotrace scan <directory> "
+               "[--json] "
+               "[--save-baseline <file>] "
+               "[--baseline <file>]\n";
+
         return 2;
     }
 
-    std::string command = argv[1];
+    const std::string command = argv[1];
 
     if (command != "scan") {
 
-        std::cout << "Unknown command: "
-                  << command
-                  << "\n";
-
-        std::cout << "Usage: zerotrace scan <directory> [--json]\n";
+        std::cout
+            << "Unknown command: "
+            << command
+            << "\n";
 
         return 2;
     }
 
     if (argc < 3) {
 
-        std::cout << "Error: directory path is required.\n";
-        std::cout << "Usage: zerotrace scan <directory> [--json]\n";
+        std::cout
+            << "Error: directory path is required.\n";
 
         return 2;
     }
 
-    std::string path = argv[2];
+    const std::string path = argv[2];
 
     bool json_output = false;
 
-    if (argc >= 4 &&
-        std::string(argv[3]) == "--json") {
+    std::string save_baseline_path;
+    std::string baseline_path;
 
-        json_output = true;
+    for (int i = 3; i < argc; ++i) {
+
+        std::string argument = argv[i];
+
+        if (argument == "--json") {
+
+            json_output = true;
+        }
+
+        else if (argument == "--save-baseline") {
+
+            if (i + 1 >= argc) {
+
+                std::cerr
+                    << "Error: --save-baseline "
+                       "requires a file path.\n";
+
+                return 2;
+            }
+
+            save_baseline_path = argv[++i];
+        }
+
+        else if (argument == "--baseline") {
+
+            if (i + 1 >= argc) {
+
+                std::cerr
+                    << "Error: --baseline "
+                       "requires a file path.\n";
+
+                return 2;
+            }
+
+            baseline_path = argv[++i];
+        }
+
+        else {
+
+            std::cerr
+                << "Unknown option: "
+                << argument
+                << "\n";
+
+            return 2;
+        }
     }
 
     std::vector<std::string> files =
@@ -143,19 +195,114 @@ int main(int argc, char* argv[]) {
         );
     }
 
+    /*
+        Save baseline.
+    */
+
+    if (!save_baseline_path.empty()) {
+
+        if (!zerotrace::save_baseline(
+                save_baseline_path,
+                all_findings)) {
+
+            std::cerr
+                << "Error: could not save baseline to "
+                << save_baseline_path
+                << "\n";
+
+            return 2;
+        }
+
+        if (!json_output) {
+
+            std::cout
+                << "Baseline saved to: "
+                << save_baseline_path
+                << "\n";
+
+            std::cout
+                << "Findings saved: "
+                << all_findings.size()
+                << "\n";
+        }
+    }
+
+    /*
+        Load baseline.
+    */
+
+    std::unordered_set<std::string> baseline;
+
+    if (!baseline_path.empty()) {
+
+        baseline =
+            zerotrace::load_baseline(baseline_path);
+
+        if (baseline.empty()) {
+
+            std::ifstream test_file(
+                baseline_path
+            );
+
+            if (!test_file.is_open()) {
+
+                std::cerr
+                    << "Error: could not open baseline: "
+                    << baseline_path
+                    << "\n";
+
+                return 2;
+            }
+        }
+    }
+
+    int new_findings = 0;
+
+    for (const auto& finding : all_findings) {
+
+        if (!baseline_path.empty()) {
+
+            const std::string fingerprint =
+                zerotrace::create_finding_fingerprint(
+                    finding
+                );
+
+            if (baseline.find(fingerprint) ==
+                baseline.end()) {
+
+                ++new_findings;
+            }
+        }
+    }
+
+    /*
+        JSON output.
+    */
+
     if (json_output) {
 
         std::cout << "{\n";
 
-        std::cout << "  \"files_scanned\": "
-                  << files.size()
-                  << ",\n";
+        std::cout
+            << "  \"files_scanned\": "
+            << files.size()
+            << ",\n";
 
-        std::cout << "  \"total_findings\": "
-                  << all_findings.size()
-                  << ",\n";
+        std::cout
+            << "  \"total_findings\": "
+            << all_findings.size()
+            << ",\n";
 
-        std::cout << "  \"findings\": [\n";
+        if (!baseline_path.empty()) {
+
+            std::cout
+                << "  \"new_findings\": "
+                << new_findings
+                << ",\n";
+        }
+
+        std::cout
+            << "  \"findings\": [\n";
 
         for (std::size_t i = 0;
              i < all_findings.size();
@@ -164,42 +311,72 @@ int main(int argc, char* argv[]) {
             const auto& finding =
                 all_findings[i];
 
+            bool is_new = false;
+
+            if (!baseline_path.empty()) {
+
+                const std::string fingerprint =
+                    zerotrace::create_finding_fingerprint(
+                        finding
+                    );
+
+                is_new =
+                    baseline.find(fingerprint) ==
+                    baseline.end();
+            }
+
             std::cout << "    {\n";
 
-            std::cout << "      \"type\": \""
-                      << escape_json(finding.type)
-                      << "\",\n";
+            std::cout
+                << "      \"type\": \""
+                << escape_json(finding.type)
+                << "\",\n";
 
-            std::cout << "      \"file\": \""
-                      << escape_json(
-                             normalize_path(finding.file))
-                      << "\",\n";
+            std::cout
+                << "      \"file\": \""
+                << escape_json(
+                       normalize_path(finding.file))
+                << "\",\n";
 
-            std::cout << "      \"line\": "
-                      << finding.line
-                      << ",\n";
+            std::cout
+                << "      \"line\": "
+                << finding.line
+                << ",\n";
 
-            std::cout << "      \"severity\": \""
-                      << severity_to_string(
-                             finding.severity)
-                      << "\",\n";
+            std::cout
+                << "      \"severity\": \""
+                << severity_to_string(
+                       finding.severity)
+                << "\",\n";
 
-            std::cout << "      \"confidence\": "
-                      << finding.confidence
-                      << ",\n";
+            std::cout
+                << "      \"confidence\": "
+                << finding.confidence
+                << ",\n";
 
-            std::cout << "      \"entropy\": "
-                      << std::fixed
-                      << std::setprecision(2)
-                      << finding.entropy
-                      << ",\n";
+            std::cout
+                << "      \"entropy\": "
+                << std::fixed
+                << std::setprecision(2)
+                << finding.entropy
+                << ",\n";
 
-            std::cout << "      \"value\": \""
-                      << escape_json(
-                             zerotrace::redact_secret(
-                                 finding.matched_text))
-                      << "\"\n";
+            std::cout
+                << "      \"value\": \""
+                << escape_json(
+                       zerotrace::redact_secret(
+                           finding.matched_text))
+                << "\"";
 
+            if (!baseline_path.empty()) {
+
+                std::cout
+                    << ",\n"
+                    << "      \"new\": "
+                    << (is_new ? "true" : "false");
+            }
+
+            std::cout << "\n";
             std::cout << "    }";
 
             if (i + 1 < all_findings.size()) {
@@ -209,61 +386,112 @@ int main(int argc, char* argv[]) {
             std::cout << "\n";
         }
 
-        std::cout << "  ]\n";
-        std::cout << "}\n";
+        std::cout
+            << "  ]\n"
+            << "}\n";
+
+        if (!baseline_path.empty()) {
+            return new_findings > 0 ? 1 : 0;
+        }
 
         return all_findings.empty() ? 0 : 1;
     }
 
-    std::cout << "=================================\n";
-    std::cout << "          ZeroTrace\n";
-    std::cout << "   Secret Detection Engine\n";
-    std::cout << "=================================\n\n";
+    /*
+        Human-readable output.
+    */
 
-    std::cout << "Scanning: "
-              << path
-              << "\n\n";
+    std::cout
+        << "=================================\n"
+        << "          ZeroTrace\n"
+        << "   Secret Detection Engine\n"
+        << "=================================\n\n";
 
-    std::cout << "Files scanned: "
-              << files.size()
-              << "\n\n";
+    std::cout
+        << "Scanning: "
+        << path
+        << "\n\n";
+
+    std::cout
+        << "Files scanned: "
+        << files.size()
+        << "\n\n";
 
     for (const auto& finding : all_findings) {
 
-        std::cout << "["
-                  << severity_to_string(
-                         finding.severity)
-                  << "] "
-                  << finding.type
-                  << "\n";
+        bool is_new = false;
 
-        std::cout << "  File: "
-                  << normalize_path(finding.file)
-                  << "\n";
+        if (!baseline_path.empty()) {
 
-        std::cout << "  Line: "
-                  << finding.line
-                  << "\n";
+            const std::string fingerprint =
+                zerotrace::create_finding_fingerprint(
+                    finding
+                );
 
-        std::cout << "  Confidence: "
-                  << finding.confidence
-                  << "%\n";
+            is_new =
+                baseline.find(fingerprint) ==
+                baseline.end();
+        }
 
-        std::cout << "  Entropy: "
-                  << std::fixed
-                  << std::setprecision(2)
-                  << finding.entropy
-                  << "\n";
+        if (!baseline_path.empty()) {
 
-        std::cout << "  Value: "
-                  << zerotrace::redact_secret(
-                         finding.matched_text)
-                  << "\n\n";
+            std::cout
+                << (is_new ? "[NEW] " : "[KNOWN] ");
+        }
+
+        std::cout
+            << "["
+            << severity_to_string(
+                   finding.severity)
+            << "] "
+            << finding.type
+            << "\n";
+
+        std::cout
+            << "  File: "
+            << normalize_path(finding.file)
+            << "\n";
+
+        std::cout
+            << "  Line: "
+            << finding.line
+            << "\n";
+
+        std::cout
+            << "  Confidence: "
+            << finding.confidence
+            << "%\n";
+
+        std::cout
+            << "  Entropy: "
+            << std::fixed
+            << std::setprecision(2)
+            << finding.entropy
+            << "\n";
+
+        std::cout
+            << "  Value: "
+            << zerotrace::redact_secret(
+                   finding.matched_text)
+            << "\n\n";
     }
 
-    std::cout << "Total findings: "
-              << all_findings.size()
-              << "\n";
+    std::cout
+        << "Total findings: "
+        << all_findings.size()
+        << "\n";
+
+    if (!baseline_path.empty()) {
+
+        std::cout
+            << "New findings: "
+            << new_findings
+            << "\n";
+    }
+
+    if (!baseline_path.empty()) {
+        return new_findings > 0 ? 1 : 0;
+    }
 
     return all_findings.empty() ? 0 : 1;
 }
