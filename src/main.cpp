@@ -5,6 +5,7 @@
 
 #include "detector.h"
 #include "finding.h"
+#include "redactor.h"
 #include "scanner.h"
 
 std::string severity_to_string(zerotrace::Severity severity) {
@@ -96,7 +97,12 @@ int main(int argc, char* argv[]) {
 
                 std::cout << "  Confidence: "
                           << finding.confidence
-                          << "%\n\n";
+                          << "%\n";
+
+                std::cout << "  Value: "
+                          << zerotrace::redact_secret(
+                                 finding.matched_text)
+                          << "\n\n";
 
                 ++total_findings;
             }
