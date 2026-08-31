@@ -89,7 +89,8 @@ int main(int argc, char* argv[]) {
             << "Usage: zerotrace scan <directory> "
                "[--json] "
                "[--save-baseline <file>] "
-               "[--baseline <file>]\n";
+               "[--baseline <file>] "
+               "[--threads <number>]\n";
 
         return 2;
     }
@@ -120,6 +121,20 @@ int main(int argc, char* argv[]) {
 
     std::string save_baseline_path;
     std::string baseline_path;
+
+    /*
+        Default thread count.
+
+        Use the number of hardware threads reported
+        by the system. Fall back to 1 if unavailable.
+    */
+
+    unsigned int thread_count =
+        std::thread::hardware_concurrency();
+
+    if (thread_count == 0) {
+        thread_count = 1;
+    }
 
     for (int i = 3; i < argc; ++i) {
 
@@ -158,6 +173,43 @@ int main(int argc, char* argv[]) {
             baseline_path = argv[++i];
         }
 
+        else if (argument == "--threads") {
+
+            if (i + 1 >= argc) {
+
+                std::cerr
+                    << "Error: --threads "
+                       "requires a number.\n";
+
+                return 2;
+            }
+
+            try {
+
+                const unsigned long parsed =
+                    std::stoul(argv[++i]);
+
+                if (parsed == 0) {
+
+                    std::cerr
+                        << "Error: thread count "
+                           "must be greater than 0.\n";
+
+                    return 2;
+                }
+
+                thread_count =
+                    static_cast<unsigned int>(parsed);
+            }
+            catch (...) {
+
+                std::cerr
+                    << "Error: invalid thread count.\n";
+
+                return 2;
+            }
+        }
+
         else {
 
             std::cerr
@@ -177,53 +229,110 @@ int main(int argc, char* argv[]) {
         zerotrace::scan_directory(path);
 
     /*
+        Don't create more workers than files.
+    */
+
+    if (!files.empty() &&
+        thread_count > files.size()) {
+
+        thread_count =
+            static_cast<unsigned int>(files.size());
+    }
+
+    /*
         Multithreaded scanning.
 
-        Each file is scanned independently in its
-        own asynchronous task.
+        Files are distributed among a fixed number
+        of worker tasks.
 
-        We do NOT modify all_findings from worker
-        threads. Each worker returns its own vector,
-        and the main thread combines the results.
+        Each task processes a range of files and
+        returns its own findings.
     */
 
     std::vector<
         std::future<std::vector<zerotrace::Finding>>
     > tasks;
 
-    tasks.reserve(files.size());
+    tasks.reserve(thread_count);
 
-    for (const std::string& file : files) {
+    const std::size_t total_files =
+        files.size();
+
+    const std::size_t base_files_per_thread =
+        total_files / thread_count;
+
+    const std::size_t extra_files =
+        total_files % thread_count;
+
+    std::size_t start_index = 0;
+
+    for (unsigned int worker = 0;
+         worker < thread_count;
+         ++worker) {
+
+        const std::size_t files_for_worker =
+            base_files_per_thread +
+            (worker < extra_files ? 1 : 0);
+
+        const std::size_t worker_start =
+            start_index;
+
+        const std::size_t worker_end =
+            worker_start + files_for_worker;
+
+        start_index = worker_end;
 
         tasks.push_back(
             std::async(
                 std::launch::async,
-                [file]() {
+                [&files, worker_start, worker_end]() {
 
-                    std::vector<zerotrace::Finding> findings;
+                    std::vector<zerotrace::Finding>
+                        worker_findings;
 
-                    std::ifstream input(file);
+                    for (std::size_t i = worker_start;
+                         i < worker_end;
+                         ++i) {
 
-                    if (!input.is_open()) {
-                        return findings;
+                        const std::string& file =
+                            files[i];
+
+                        std::ifstream input(file);
+
+                        if (!input.is_open()) {
+                            continue;
+                        }
+
+                        std::string content(
+                            (std::istreambuf_iterator<char>(
+                                input)),
+                            std::istreambuf_iterator<char>()
+                        );
+
+                        std::vector<zerotrace::Finding>
+                            findings =
+                                zerotrace::detect_secrets(
+                                    file,
+                                    content
+                                );
+
+                        worker_findings.insert(
+                            worker_findings.end(),
+                            findings.begin(),
+                            findings.end()
+                        );
                     }
 
-                    std::string content(
-                        (std::istreambuf_iterator<char>(input)),
-                        std::istreambuf_iterator<char>()
-                    );
-
-                    return zerotrace::detect_secrets(
-                        file,
-                        content
-                    );
+                    return worker_findings;
                 }
             )
         );
     }
 
     /*
-        Collect results from worker threads.
+        Collect worker results.
+
+        Only the main thread modifies all_findings.
     */
 
     std::vector<zerotrace::Finding> all_findings;
@@ -338,6 +447,11 @@ int main(int argc, char* argv[]) {
             << ",\n";
 
         std::cout
+            << "  \"threads\": "
+            << thread_count
+            << ",\n";
+
+        std::cout
             << "  \"total_findings\": "
             << all_findings.size()
             << ",\n";
@@ -439,14 +553,6 @@ int main(int argc, char* argv[]) {
             << "  ]\n"
             << "}\n";
 
-        /*
-            Exit code:
-
-            0 = no findings / no new findings
-            1 = findings or new findings
-            2 = scanner error
-        */
-
         if (!baseline_path.empty()) {
             return new_findings > 0 ? 1 : 0;
         }
@@ -472,6 +578,11 @@ int main(int argc, char* argv[]) {
     std::cout
         << "Files scanned: "
         << files.size()
+        << "\n";
+
+    std::cout
+        << "Threads: "
+        << thread_count
         << "\n\n";
 
     for (const auto& finding : all_findings) {
