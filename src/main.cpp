@@ -2,6 +2,7 @@
 #include <future>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -82,6 +83,248 @@ std::string escape_json(const std::string& text) {
     return result;
 }
 
+std::string build_json_report(
+    const std::vector<zerotrace::Finding>& all_findings,
+    std::size_t files_scanned,
+    unsigned int thread_count,
+    const std::string& rules_path,
+    const std::unordered_set<std::string>& baseline,
+    const std::string& baseline_path,
+    int new_findings
+) {
+
+    std::ostringstream output;
+
+    output << "{\n";
+
+    output
+        << "  \"files_scanned\": "
+        << files_scanned
+        << ",\n";
+
+    output
+        << "  \"threads\": "
+        << thread_count
+        << ",\n";
+
+    output
+        << "  \"rules_file\": \""
+        << escape_json(rules_path)
+        << "\",\n";
+
+    output
+        << "  \"total_findings\": "
+        << all_findings.size()
+        << ",\n";
+
+    if (!baseline_path.empty()) {
+
+        output
+            << "  \"new_findings\": "
+            << new_findings
+            << ",\n";
+    }
+
+    output
+        << "  \"findings\": [\n";
+
+    for (std::size_t i = 0;
+         i < all_findings.size();
+         ++i) {
+
+        const auto& finding =
+            all_findings[i];
+
+        bool is_new = false;
+
+        if (!baseline_path.empty()) {
+
+            const std::string fingerprint =
+                zerotrace::create_finding_fingerprint(
+                    finding
+                );
+
+            is_new =
+                baseline.find(fingerprint) ==
+                baseline.end();
+        }
+
+        output << "    {\n";
+
+        output
+            << "      \"type\": \""
+            << escape_json(finding.type)
+            << "\",\n";
+
+        output
+            << "      \"file\": \""
+            << escape_json(
+                   normalize_path(finding.file))
+            << "\",\n";
+
+        output
+            << "      \"line\": "
+            << finding.line
+            << ",\n";
+
+        output
+            << "      \"severity\": \""
+            << severity_to_string(
+                   finding.severity)
+            << "\",\n";
+
+        output
+            << "      \"confidence\": "
+            << finding.confidence
+            << ",\n";
+
+        output
+            << "      \"entropy\": "
+            << std::fixed
+            << std::setprecision(2)
+            << finding.entropy
+            << ",\n";
+
+        output
+            << "      \"value\": \""
+            << escape_json(
+                   zerotrace::redact_secret(
+                       finding.matched_text))
+            << "\"";
+
+        if (!baseline_path.empty()) {
+
+            output
+                << ",\n"
+                << "      \"new\": "
+                << (is_new ? "true" : "false");
+        }
+
+        output << "\n";
+        output << "    }";
+
+        if (i + 1 < all_findings.size()) {
+            output << ",";
+        }
+
+        output << "\n";
+    }
+
+    output
+        << "  ]\n"
+        << "}\n";
+
+    return output.str();
+}
+
+std::string build_text_report(
+    const std::vector<zerotrace::Finding>& all_findings,
+    const std::string& path,
+    std::size_t files_scanned,
+    unsigned int thread_count,
+    const std::unordered_set<std::string>& baseline,
+    const std::string& baseline_path,
+    int new_findings
+) {
+
+    std::ostringstream output;
+
+    output
+        << "=================================\n"
+        << "          ZeroTrace\n"
+        << "   Secret Detection Engine\n"
+        << "=================================\n\n";
+
+    output
+        << "Scanning: "
+        << path
+        << "\n\n";
+
+    output
+        << "Files scanned: "
+        << files_scanned
+        << "\n";
+
+    output
+        << "Threads: "
+        << thread_count
+        << "\n\n";
+
+    for (const auto& finding : all_findings) {
+
+        bool is_new = false;
+
+        if (!baseline_path.empty()) {
+
+            const std::string fingerprint =
+                zerotrace::create_finding_fingerprint(
+                    finding
+                );
+
+            is_new =
+                baseline.find(fingerprint) ==
+                baseline.end();
+        }
+
+        if (!baseline_path.empty()) {
+
+            output
+                << (is_new ? "[NEW] " : "[KNOWN] ");
+        }
+
+        output
+            << "["
+            << severity_to_string(
+                   finding.severity)
+            << "] "
+            << finding.type
+            << "\n";
+
+        output
+            << "  File: "
+            << normalize_path(finding.file)
+            << "\n";
+
+        output
+            << "  Line: "
+            << finding.line
+            << "\n";
+
+        output
+            << "  Confidence: "
+            << finding.confidence
+            << "%\n";
+
+        output
+            << "  Entropy: "
+            << std::fixed
+            << std::setprecision(2)
+            << finding.entropy
+            << "\n";
+
+        output
+            << "  Value: "
+            << zerotrace::redact_secret(
+                   finding.matched_text)
+            << "\n\n";
+    }
+
+    output
+        << "Total findings: "
+        << all_findings.size()
+        << "\n";
+
+    if (!baseline_path.empty()) {
+
+        output
+            << "New findings: "
+            << new_findings
+            << "\n";
+    }
+
+    return output.str();
+}
+
 int main(int argc, char* argv[]) {
 
     if (argc < 2) {
@@ -89,6 +332,7 @@ int main(int argc, char* argv[]) {
         std::cout
             << "Usage: zerotrace scan <directory> "
                "[--json] "
+               "[--output <file>] "
                "[--save-baseline <file>] "
                "[--baseline <file>] "
                "[--threads <number>] "
@@ -121,20 +365,11 @@ int main(int argc, char* argv[]) {
 
     bool json_output = false;
 
+    std::string output_path;
     std::string save_baseline_path;
     std::string baseline_path;
 
-    /*
-        Default rules configuration file.
-    */
-
     std::string rules_path = "rules.conf";
-
-    /*
-        Default thread count.
-
-        Use all hardware threads reported by the system.
-    */
 
     unsigned int thread_count =
         std::thread::hardware_concurrency();
@@ -154,6 +389,20 @@ int main(int argc, char* argv[]) {
         if (argument == "--json") {
 
             json_output = true;
+        }
+
+        else if (argument == "--output") {
+
+            if (i + 1 >= argc) {
+
+                std::cerr
+                    << "Error: --output "
+                       "requires a file path.\n";
+
+                return 2;
+            }
+
+            output_path = argv[++i];
         }
 
         else if (argument == "--save-baseline") {
@@ -248,18 +497,14 @@ int main(int argc, char* argv[]) {
 
     /*
         Load enabled detection rules once.
-
-        Worker threads only read this set.
     */
 
     std::unordered_set<std::string> enabled_rules =
         zerotrace::load_enabled_rules(rules_path);
 
     /*
-        If the configuration file doesn't exist,
-        use all default rules.
-
-        This preserves the old ZeroTrace behavior.
+        If rules.conf doesn't exist,
+        enable all default rules.
     */
 
     if (enabled_rules.empty()) {
@@ -279,7 +524,7 @@ int main(int argc, char* argv[]) {
     }
 
     /*
-        Find files to scan.
+        Find files.
     */
 
     std::vector<std::string> files =
@@ -296,19 +541,12 @@ int main(int argc, char* argv[]) {
             static_cast<unsigned int>(files.size());
     }
 
-    /*
-        If there are no files, avoid creating
-        zero workers.
-    */
-
     if (files.empty()) {
         thread_count = 1;
     }
 
     /*
         Multithreaded scanning.
-
-        Each worker processes a range of files.
     */
 
     std::vector<
@@ -397,8 +635,6 @@ int main(int argc, char* argv[]) {
 
     /*
         Collect worker results.
-
-        Only the main thread modifies all_findings.
     */
 
     std::vector<zerotrace::Finding> all_findings;
@@ -433,7 +669,7 @@ int main(int argc, char* argv[]) {
             return 2;
         }
 
-        if (!json_output) {
+        if (!json_output && output_path.empty()) {
 
             std::cout
                 << "Baseline saved to: "
@@ -500,233 +736,83 @@ int main(int argc, char* argv[]) {
     }
 
     /*
-        JSON output.
+        Build the report.
     */
+
+    std::string report;
 
     if (json_output) {
 
-        std::cout << "{\n";
+        report = build_json_report(
+            all_findings,
+            files.size(),
+            thread_count,
+            rules_path,
+            baseline,
+            baseline_path,
+            new_findings
+        );
+    }
 
-        std::cout
-            << "  \"files_scanned\": "
-            << files.size()
-            << ",\n";
+    else {
 
-        std::cout
-            << "  \"threads\": "
-            << thread_count
-            << ",\n";
-
-        std::cout
-            << "  \"rules_file\": \""
-            << escape_json(rules_path)
-            << "\",\n";
-
-        std::cout
-            << "  \"total_findings\": "
-            << all_findings.size()
-            << ",\n";
-
-        if (!baseline_path.empty()) {
-
-            std::cout
-                << "  \"new_findings\": "
-                << new_findings
-                << ",\n";
-        }
-
-        std::cout
-            << "  \"findings\": [\n";
-
-        for (std::size_t i = 0;
-             i < all_findings.size();
-             ++i) {
-
-            const auto& finding =
-                all_findings[i];
-
-            bool is_new = false;
-
-            if (!baseline_path.empty()) {
-
-                const std::string fingerprint =
-                    zerotrace::create_finding_fingerprint(
-                        finding
-                    );
-
-                is_new =
-                    baseline.find(fingerprint) ==
-                    baseline.end();
-            }
-
-            std::cout << "    {\n";
-
-            std::cout
-                << "      \"type\": \""
-                << escape_json(finding.type)
-                << "\",\n";
-
-            std::cout
-                << "      \"file\": \""
-                << escape_json(
-                       normalize_path(finding.file))
-                << "\",\n";
-
-            std::cout
-                << "      \"line\": "
-                << finding.line
-                << ",\n";
-
-            std::cout
-                << "      \"severity\": \""
-                << severity_to_string(
-                       finding.severity)
-                << "\",\n";
-
-            std::cout
-                << "      \"confidence\": "
-                << finding.confidence
-                << ",\n";
-
-            std::cout
-                << "      \"entropy\": "
-                << std::fixed
-                << std::setprecision(2)
-                << finding.entropy
-                << ",\n";
-
-            std::cout
-                << "      \"value\": \""
-                << escape_json(
-                       zerotrace::redact_secret(
-                           finding.matched_text))
-                << "\"";
-
-            if (!baseline_path.empty()) {
-
-                std::cout
-                    << ",\n"
-                    << "      \"new\": "
-                    << (is_new ? "true" : "false");
-            }
-
-            std::cout << "\n";
-            std::cout << "    }";
-
-            if (i + 1 < all_findings.size()) {
-                std::cout << ",";
-            }
-
-            std::cout << "\n";
-        }
-
-        std::cout
-            << "  ]\n"
-            << "}\n";
-
-        if (!baseline_path.empty()) {
-            return new_findings > 0 ? 1 : 0;
-        }
-
-        return all_findings.empty() ? 0 : 1;
+        report = build_text_report(
+            all_findings,
+            path,
+            files.size(),
+            thread_count,
+            baseline,
+            baseline_path,
+            new_findings
+        );
     }
 
     /*
-        Human-readable output.
+        Write report to file if requested.
     */
 
-    std::cout
-        << "=================================\n"
-        << "          ZeroTrace\n"
-        << "   Secret Detection Engine\n"
-        << "=================================\n\n";
+    if (!output_path.empty()) {
 
-    std::cout
-        << "Scanning: "
-        << path
-        << "\n\n";
+        std::ofstream output_file(
+            output_path
+        );
 
-    std::cout
-        << "Files scanned: "
-        << files.size()
-        << "\n";
+        if (!output_file.is_open()) {
 
-    std::cout
-        << "Threads: "
-        << thread_count
-        << "\n\n";
+            std::cerr
+                << "Error: could not write output file: "
+                << output_path
+                << "\n";
 
-    for (const auto& finding : all_findings) {
-
-        bool is_new = false;
-
-        if (!baseline_path.empty()) {
-
-            const std::string fingerprint =
-                zerotrace::create_finding_fingerprint(
-                    finding
-                );
-
-            is_new =
-                baseline.find(fingerprint) ==
-                baseline.end();
+            return 2;
         }
 
-        if (!baseline_path.empty()) {
+        output_file << report;
 
-            std::cout
-                << (is_new ? "[NEW] " : "[KNOWN] ");
-        }
+        output_file.close();
 
         std::cout
-            << "["
-            << severity_to_string(
-                   finding.severity)
-            << "] "
-            << finding.type
-            << "\n";
-
-        std::cout
-            << "  File: "
-            << normalize_path(finding.file)
-            << "\n";
-
-        std::cout
-            << "  Line: "
-            << finding.line
-            << "\n";
-
-        std::cout
-            << "  Confidence: "
-            << finding.confidence
-            << "%\n";
-
-        std::cout
-            << "  Entropy: "
-            << std::fixed
-            << std::setprecision(2)
-            << finding.entropy
-            << "\n";
-
-        std::cout
-            << "  Value: "
-            << zerotrace::redact_secret(
-                   finding.matched_text)
-            << "\n\n";
-    }
-
-    std::cout
-        << "Total findings: "
-        << all_findings.size()
-        << "\n";
-
-    if (!baseline_path.empty()) {
-
-        std::cout
-            << "New findings: "
-            << new_findings
+            << "Report written to: "
+            << output_path
             << "\n";
     }
+
+    else {
+
+        /*
+            Preserve normal terminal behavior.
+        */
+
+        std::cout << report;
+    }
+
+    /*
+        Exit codes:
+
+        0 = no findings / no new findings
+        1 = findings or new findings
+        2 = scanner error
+    */
 
     if (!baseline_path.empty()) {
         return new_findings > 0 ? 1 : 0;
