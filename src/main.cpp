@@ -1,7 +1,9 @@
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -167,26 +169,69 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    /*
+        Find files to scan.
+    */
+
     std::vector<std::string> files =
         zerotrace::scan_directory(path);
 
-    std::vector<zerotrace::Finding> all_findings;
+    /*
+        Multithreaded scanning.
+
+        Each file is scanned independently in its
+        own asynchronous task.
+
+        We do NOT modify all_findings from worker
+        threads. Each worker returns its own vector,
+        and the main thread combines the results.
+    */
+
+    std::vector<
+        std::future<std::vector<zerotrace::Finding>>
+    > tasks;
+
+    tasks.reserve(files.size());
 
     for (const std::string& file : files) {
 
-        std::ifstream input(file);
+        tasks.push_back(
+            std::async(
+                std::launch::async,
+                [file]() {
 
-        if (!input.is_open()) {
-            continue;
-        }
+                    std::vector<zerotrace::Finding> findings;
 
-        std::string content(
-            (std::istreambuf_iterator<char>(input)),
-            std::istreambuf_iterator<char>()
+                    std::ifstream input(file);
+
+                    if (!input.is_open()) {
+                        return findings;
+                    }
+
+                    std::string content(
+                        (std::istreambuf_iterator<char>(input)),
+                        std::istreambuf_iterator<char>()
+                    );
+
+                    return zerotrace::detect_secrets(
+                        file,
+                        content
+                    );
+                }
+            )
         );
+    }
+
+    /*
+        Collect results from worker threads.
+    */
+
+    std::vector<zerotrace::Finding> all_findings;
+
+    for (auto& task : tasks) {
 
         std::vector<zerotrace::Finding> findings =
-            zerotrace::detect_secrets(file, content);
+            task.get();
 
         all_findings.insert(
             all_findings.end(),
@@ -255,6 +300,10 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+
+    /*
+        Calculate new findings.
+    */
 
     int new_findings = 0;
 
@@ -389,6 +438,14 @@ int main(int argc, char* argv[]) {
         std::cout
             << "  ]\n"
             << "}\n";
+
+        /*
+            Exit code:
+
+            0 = no findings / no new findings
+            1 = findings or new findings
+            2 = scanner error
+        */
 
         if (!baseline_path.empty()) {
             return new_findings > 0 ? 1 : 0;
