@@ -1,7 +1,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -28,6 +27,18 @@ std::string severity_to_string(zerotrace::Severity severity) {
     }
 
     return "UNKNOWN";
+}
+
+std::string normalize_path(std::string path) {
+
+    for (char& character : path) {
+
+        if (character == '\\') {
+            character = '/';
+        }
+    }
+
+    return path;
 }
 
 std::string escape_json(const std::string& text) {
@@ -70,7 +81,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         std::cout << "Usage: zerotrace scan <directory> [--json]\n";
-        return 1;
+        return 2;
     }
 
     std::string command = argv[1];
@@ -83,7 +94,7 @@ int main(int argc, char* argv[]) {
 
         std::cout << "Usage: zerotrace scan <directory> [--json]\n";
 
-        return 1;
+        return 2;
     }
 
     if (argc < 3) {
@@ -91,25 +102,23 @@ int main(int argc, char* argv[]) {
         std::cout << "Error: directory path is required.\n";
         std::cout << "Usage: zerotrace scan <directory> [--json]\n";
 
-        return 1;
+        return 2;
     }
 
     std::string path = argv[2];
 
     bool json_output = false;
 
-    if (argc >= 4 && std::string(argv[3]) == "--json") {
+    if (argc >= 4 &&
+        std::string(argv[3]) == "--json") {
+
         json_output = true;
     }
 
     std::vector<std::string> files =
         zerotrace::scan_directory(path);
 
-    struct ScanResult {
-        std::vector<zerotrace::Finding> findings;
-    };
-
-    ScanResult result;
+    std::vector<zerotrace::Finding> all_findings;
 
     for (const std::string& file : files) {
 
@@ -127,14 +136,13 @@ int main(int argc, char* argv[]) {
         std::vector<zerotrace::Finding> findings =
             zerotrace::detect_secrets(file, content);
 
-        result.findings.insert(
-            result.findings.end(),
+        all_findings.insert(
+            all_findings.end(),
             findings.begin(),
             findings.end()
         );
     }
 
-    // JSON output mode.
     if (json_output) {
 
         std::cout << "{\n";
@@ -144,17 +152,17 @@ int main(int argc, char* argv[]) {
                   << ",\n";
 
         std::cout << "  \"total_findings\": "
-                  << result.findings.size()
+                  << all_findings.size()
                   << ",\n";
 
         std::cout << "  \"findings\": [\n";
 
         for (std::size_t i = 0;
-             i < result.findings.size();
+             i < all_findings.size();
              ++i) {
 
             const auto& finding =
-                result.findings[i];
+                all_findings[i];
 
             std::cout << "    {\n";
 
@@ -163,7 +171,8 @@ int main(int argc, char* argv[]) {
                       << "\",\n";
 
             std::cout << "      \"file\": \""
-                      << escape_json(finding.file)
+                      << escape_json(
+                             normalize_path(finding.file))
                       << "\",\n";
 
             std::cout << "      \"line\": "
@@ -193,7 +202,7 @@ int main(int argc, char* argv[]) {
 
             std::cout << "    }";
 
-            if (i + 1 < result.findings.size()) {
+            if (i + 1 < all_findings.size()) {
                 std::cout << ",";
             }
 
@@ -203,10 +212,9 @@ int main(int argc, char* argv[]) {
         std::cout << "  ]\n";
         std::cout << "}\n";
 
-        return 0;
+        return all_findings.empty() ? 0 : 1;
     }
 
-    // Human-readable output.
     std::cout << "=================================\n";
     std::cout << "          ZeroTrace\n";
     std::cout << "   Secret Detection Engine\n";
@@ -220,7 +228,7 @@ int main(int argc, char* argv[]) {
               << files.size()
               << "\n\n";
 
-    for (const auto& finding : result.findings) {
+    for (const auto& finding : all_findings) {
 
         std::cout << "["
                   << severity_to_string(
@@ -230,7 +238,7 @@ int main(int argc, char* argv[]) {
                   << "\n";
 
         std::cout << "  File: "
-                  << finding.file
+                  << normalize_path(finding.file)
                   << "\n";
 
         std::cout << "  Line: "
@@ -254,8 +262,8 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Total findings: "
-              << result.findings.size()
+              << all_findings.size()
               << "\n";
 
-    return 0;
+    return all_findings.empty() ? 0 : 1;
 }
