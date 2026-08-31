@@ -1,8 +1,10 @@
-#include<iostream>
-using namespace std;
+#include <iostream>
 
-int main(){
-    cout << "zero search:\n";
-    cout << "it has be intialized";
+int main() {
+    std::cout << "=================================\n";
+    std::cout << "          ZeroTrace\n";
+    std::cout << "   Secret Detection Engine\n";
+    std::cout << "=================================\n";
 
+    return 0;
 }
