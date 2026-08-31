@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "allowlist.h"
 #include "baseline.h"
 #include "detector.h"
 #include "finding.h"
@@ -338,7 +339,8 @@ int main(int argc, char* argv[]) {
                "[--save-baseline <file>] "
                "[--baseline <file>] "
                "[--threads <number>] "
-               "[--rules <file>]\n";
+               "[--rules <file>] "
+               "[--allowlist <file>]\n";
 
         return 2;
     }
@@ -373,6 +375,8 @@ int main(int argc, char* argv[]) {
     std::string baseline_path;
 
     std::string rules_path = "rules.conf";
+
+    std::string allowlist_path;
 
     unsigned int thread_count =
         std::thread::hardware_concurrency();
@@ -467,8 +471,11 @@ int main(int argc, char* argv[]) {
                 }
 
                 thread_count =
-                    static_cast<unsigned int>(parsed);
+                    static_cast<unsigned int>(
+                        parsed
+                    );
             }
+
             catch (...) {
 
                 std::cerr
@@ -490,6 +497,20 @@ int main(int argc, char* argv[]) {
             }
 
             rules_path = argv[++i];
+        }
+
+        else if (argument == "--allowlist") {
+
+            if (i + 1 >= argc) {
+
+                std::cerr
+                    << "Error: --allowlist "
+                       "requires a file path.\n";
+
+                return 2;
+            }
+
+            allowlist_path = argv[++i];
         }
 
         else {
@@ -517,18 +538,22 @@ int main(int argc, char* argv[]) {
     }
 
     /*
-        Load enabled built-in rules.
+        Load enabled rules.
     */
 
     std::unordered_set<std::string> enabled_rules =
-        zerotrace::load_enabled_rules(rules_path);
+        zerotrace::load_enabled_rules(
+            rules_path
+        );
 
     /*
-        Load user-defined custom rules.
+        Load custom rules.
     */
 
     std::vector<zerotrace::DetectionRule> custom_rules =
-        zerotrace::load_custom_rules(rules_path);
+        zerotrace::load_custom_rules(
+            rules_path
+        );
 
     /*
         If rules.conf doesn't exist,
@@ -538,15 +563,19 @@ int main(int argc, char* argv[]) {
     if (enabled_rules.empty() &&
         custom_rules.empty()) {
 
-        std::ifstream rules_file(rules_path);
+        std::ifstream rules_file(
+            rules_path
+        );
 
         if (!rules_file.is_open()) {
 
-            const std::vector<zerotrace::DetectionRule>
-                default_rules =
-                    zerotrace::create_default_rules();
+            const std::vector<
+                zerotrace::DetectionRule
+            > default_rules =
+                zerotrace::create_default_rules();
 
-            for (const auto& rule : default_rules) {
+            for (const auto& rule :
+                 default_rules) {
 
                 enabled_rules.insert(
                     rule.name
@@ -556,17 +585,43 @@ int main(int argc, char* argv[]) {
     }
 
     /*
-        Enable custom rules automatically.
-
-        Custom rules are considered enabled when
-        they are present in rules.conf.
+        Enable custom rules.
     */
 
-    for (const auto& rule : custom_rules) {
+    for (const auto& rule :
+         custom_rules) {
 
         enabled_rules.insert(
             rule.name
         );
+    }
+
+    /*
+        Load allowlist.
+    */
+
+    zerotrace::Allowlist allowlist;
+
+    if (!allowlist_path.empty()) {
+
+        std::ifstream allowlist_file(
+            allowlist_path
+        );
+
+        if (!allowlist_file.is_open()) {
+
+            std::cerr
+                << "Error: could not open allowlist: "
+                << allowlist_path
+                << "\n";
+
+            return 2;
+        }
+
+        allowlist =
+            zerotrace::load_allowlist(
+                allowlist_path
+            );
     }
 
     /*
@@ -628,7 +683,8 @@ int main(int argc, char* argv[]) {
             start_index;
 
         const std::size_t worker_end =
-            worker_start + files_for_worker;
+            worker_start +
+            files_for_worker;
 
         start_index = worker_end;
 
@@ -638,20 +694,25 @@ int main(int argc, char* argv[]) {
                 [&files,
                  &enabled_rules,
                  &custom_rules,
+                 &allowlist,
                  worker_start,
                  worker_end]() {
 
-                    std::vector<zerotrace::Finding>
-                        worker_findings;
+                    std::vector<
+                        zerotrace::Finding
+                    > worker_findings;
 
-                    for (std::size_t i = worker_start;
+                    for (std::size_t i =
+                             worker_start;
                          i < worker_end;
                          ++i) {
 
                         const std::string& file =
                             files[i];
 
-                        std::ifstream input(file);
+                        std::ifstream input(
+                            file
+                        );
 
                         if (!input.is_open()) {
                             continue;
@@ -666,14 +727,26 @@ int main(int argc, char* argv[]) {
                             std::istreambuf_iterator<char>()
                         );
 
-                        std::vector<zerotrace::Finding>
-                            findings =
-                                zerotrace::detect_secrets(
-                                    file,
-                                    content,
-                                    enabled_rules,
-                                    custom_rules
-                                );
+                        std::vector<
+                            zerotrace::Finding
+                        > findings =
+                            zerotrace::detect_secrets(
+                                file,
+                                content,
+                                enabled_rules,
+                                custom_rules
+                            );
+
+                        /*
+                            Remove allowlisted findings
+                            before returning results.
+                        */
+
+                        findings =
+                            zerotrace::filter_allowlisted(
+                                findings,
+                                allowlist
+                            );
 
                         worker_findings.insert(
                             worker_findings.end(),
@@ -780,7 +853,8 @@ int main(int argc, char* argv[]) {
 
     int new_findings = 0;
 
-    for (const auto& finding : all_findings) {
+    for (const auto& finding :
+         all_findings) {
 
         if (!baseline_path.empty()) {
 

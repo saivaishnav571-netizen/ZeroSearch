@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 3.15)
 project(ZeroTrace)
 
 set(CMAKE_CXX_STANDARD 17)
-
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(zerotrace
@@ -23,6 +22,8 @@ add_executable(zerotrace
     src/baseline.cpp
 
     src/sarif.cpp
+
+    src/allowlist.cpp
 
 )
 
