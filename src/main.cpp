@@ -1,7 +1,9 @@
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
 
+#include "detector.h"
 #include "scanner.h"
 
 int main(int argc, char* argv[]) {
@@ -33,7 +35,51 @@ int main(int argc, char* argv[]) {
         std::vector<std::string> files =
             zerotrace::scan_directory(path);
 
-        std::cout << "Files found: " << files.size() << "\n";
+        std::cout << "Files scanned: " << files.size() << "\n\n";
+
+        int total_findings = 0;
+
+        for (const std::string& file : files) {
+
+            std::ifstream input(file);
+
+            if (!input.is_open()) {
+                continue;
+            }
+
+            std::string content(
+                (std::istreambuf_iterator<char>(input)),
+                std::istreambuf_iterator<char>()
+            );
+
+            std::vector<zerotrace::Finding> findings =
+                zerotrace::detect_secrets(file, content);
+
+            for (const auto& finding : findings) {
+
+                std::cout << "[HIGH] "
+                          << finding.type
+                          << "\n";
+
+                std::cout << "  File: "
+                          << finding.file
+                          << "\n";
+
+                std::cout << "  Line: "
+                          << finding.line
+                          << "\n";
+
+                std::cout << "  Confidence: "
+                          << finding.confidence
+                          << "%\n\n";
+
+                ++total_findings;
+            }
+        }
+
+        std::cout << "Total findings: "
+                  << total_findings
+                  << "\n";
 
         return 0;
     }

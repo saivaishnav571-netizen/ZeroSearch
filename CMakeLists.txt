@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(zerotrace
     src/main.cpp
     src/scanner.cpp
+    src/detector.cpp
 )
 
 target_include_directories(zerotrace
